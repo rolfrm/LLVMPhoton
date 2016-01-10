@@ -23,10 +23,12 @@
 	  (temp-asm-file (format nil "./tmp~a.il.s" id)))
       (with-open-file (stream temp-il-file :direction :output :if-exists :supersede)
 	 (format stream "~a" il-code))
-      (sb-ext:run-program "llc-3.7" (list "-relocation-model=pic" temp-il-file) :search :wait :output t)
-      (sb-ext:run-program "gcc" (list temp-asm-file "-o" temp-so-file "-fPIC" "-shared" ) :search :wait)
+      (sb-ext:run-program "llc-3.7" (list "-relocation-model=pic" temp-il-file)
+			  :search :wait :output t)
+      (sb-ext:run-program "gcc" (list temp-asm-file "-o" temp-so-file "-fPIC" "-shared" )
+			  :search :wait :output t)
       (format t "~a~%" temp-so-file)
-      (dlopen temp-so-file 1)
+      (dlopen temp-so-file 1);257);1)
       )))
 
 (defun concat-lines (list-of-strings)
@@ -234,6 +236,12 @@ define i8* @deref(i8** %v2){
   %v = load i8*, i8** %v2
   ret i8* %v
 }
+
+define void @set_ptr(i8** %dst, i8* %src){
+  store i8* %src, i8** %dst
+  ret void
+}
+
 ")
 
 (defvar run-fcn-dll (compile-il run-fcn))
@@ -244,6 +252,7 @@ define i8* @deref(i8** %v2){
 (defcfun ("run_fcn" runfcn) :void (fcn :int64))
 (defcfun ("run_fcn2" runfcn2) :void (fcn :int64) (arg :int64))
 (defcfun ("deref" deref) :int64 (arg :int64))
+(defcfun ("set_ptr" set-ptr) :void (dst :int64) (src :int64))
 ;(describe run_fcn)
 					;(describe librun)
 
@@ -300,10 +309,12 @@ define void @eval(){
 (defvar r2 "
 @.str = private constant [13 x i8] c\"hello wor%i\\0A\\00\"
 declare i32 @printf(i8* noalias nocapture, ...)
-
+@.run_test = global void () * null
 @xptr = global i64* null
 
 define void @eval(){
+ %run_test = load void () *, void () ** @.run_test
+ call void () %run_test()
  %v = inttoptr i64 ~a to i64*
  %v2 = load i64, i64* %v
  %v3 = add i64 %v2, %v2
@@ -319,12 +330,14 @@ define void @eval(){
 (defvar eval2 (dlsym r1dl "eval"))
 (defvar xdl (dlsym r1dl "x"))
 (defvar ydl (dlsym r1dl "y"))
+
 (runfcn eval2)
 
 (print (deref xdl))
 (format t "~%~%")
 (defvar r2dl (compile-il (format nil r2 xdl)))
 (defvar eval3 (dlsym r2dl "eval"))
+(set-ptr (dlsym r2dl ".run_test") (dlsym test1 "run_test"))
 (runfcn eval3)
 (runfcn eval3)
 (runfcn eval3)
@@ -350,10 +363,10 @@ define void @eval(){
   (add-variable (make-photon-variable :name 'the :type :builtin-macro :data
 				      #'the-macro))
   (add-variable (make-photon-variable :name 'defun :type :builtin-macro :data
-				      #'defun-macro))
+				      #'defun-macro)) 
   
 
-  (compile-ast `(defun |test-hello.1| ((x ,i32-type)) (the ,i32-type (+ x 3))))
+  (compile-ast `(defun |testhello1| ((x ,i32-type)) (the ,i32-type (+ x 3))))
   (let ((compile-out (concat-lines (reverse code))))
     (format t "Compile Out:~%~a~%" compile-out)
     (compile-il compile-out)))
