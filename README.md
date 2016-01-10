@@ -13,7 +13,7 @@ Current status:
 Which is essencially equal to ```(defun hello-world ((x i32)) (the i32 (+ x 3)))```
 Generates the following LLVM IR code:
 ```c
-define i32 @test-hello.1(i32 %X){
+define i32 @hello-world(i32 %X){
 %tmp1 = alloca i32
 store i32 3, i32* %tmp1
 %tmp2 = load i32, i32* %tmp1
