@@ -1,3 +1,4 @@
+(proclaim '(optimize (debug 3) (speed 0)))
 (print "Hej")
 
 (quicklisp:quickload 'cffi)
@@ -110,19 +111,39 @@
    ((symbolp value) (get-variable value))
    (t (error "Should not happen"))))
 
-
-
-
+(defvar dependent-variables nil)
 (defun compile-with-function(fcn-def args)
   (let ((compiled-args
 	 (mapcar (lambda (sub) (compile-ast sub)) args)))
-    ))
+    (unless (gethash (photon-variable-name fcn-def)
+		     dependent-variables)
+      (setf (gethash (photon-variable-name fcn-def)
+		     dependent-variables) fcn-def))
+    (let* ((fcn-type (photon-variable-type fcn-def))
+	   (args (mapcar (lambda (compiled-arg)
+			   (format nil "~a ~a"
+				   (primitive-type-name (photon-variable-type compiled-arg))
+				   (photon-variable-name
+				    compiled-arg)))
+			 compiled-args))
+	   (string-args (join-strings args #\,))
+	   (string-arg-types (join-string (mapcar (lambda
+						    (arg)(primitive-type-name
+							  (photon-variable-type
+							   arg))) compiled-args))))
+      
+      (add-local (format nil "call ~a (~a)~a(~a)"
+			 (primitive-type-name (function-type-return-type fcn-type))
+			 string-arg-types (photon-variable-name fcn-def)
+			 string-args) (function-type-return-type fcn-type))
+		       
+      )))
 
 (defun is-function(variable)
-  nil)
+  (function-type-p (photon-variable-type variable)))
 
 (defun is-builtin-macro(variable)
-  t)
+  (eq (photon-variable-type variable) :builtin-macro))
 
 (defun compile-with-builtin-macro(macro-def args)
   (let ((macro-fcn (photon-variable-data macro-def)))
@@ -357,14 +378,14 @@ define void @eval(){
   (setf (gethash (photon-variable-name variable) (first scope) )
 	variable))
 (let ((scope (list (make-hash-table)))
-      (add-local #'add-local))
+      (add-local #'add-local)
+      (dependent-variables (make-hash-table)))
   (add-variable (make-photon-variable :name '+ :type :builtin-macro :data
 				      (make-operator-macro '+ "add")))
   (add-variable (make-photon-variable :name 'the :type :builtin-macro :data
 				      #'the-macro))
   (add-variable (make-photon-variable :name 'defun :type :builtin-macro :data
-				      #'defun-macro)) 
-  
+				      #'defun-macro))
 
   (compile-ast `(defun |testhello1| ((x ,i32-type)) (the ,i32-type (+ x 3))))
   (let ((compile-out (concat-lines (reverse code))))
