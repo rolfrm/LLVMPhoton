@@ -95,6 +95,8 @@
   (unless condition
     (error error-string)))
 
+(defvar dependent-variables nil)
+
 (defun compile-value (value)
   (cond
    ((integerp value)
@@ -112,20 +114,25 @@
 	       (var2 (add-local load-val used-type)))
 	  var2))))
    ((stringp value) (funcall add-local (format nil "~a" value)))
-   ((symbolp value) (get-variable value))
+   ((symbolp value)
+    (let ((var (get-variable value)))
+      (when var
+	(when (photon-variable-data var)
+	  ;; If its not a stack variable
+	  ;; currently only stack variables does not have data
+	  (setf (gethash (photon-variable-name var) dependent-variables) var))
+	var)))
    (t (error "Should not happen"))))
 
-(defvar dependent-variables nil)
+
 (defun compile-with-function(fcn-def args)
   (let ((compiled-args
 	 (mapcar (lambda (sub) (compile-ast sub)) args)))
-    (unless (gethash (photon-variable-name fcn-def)
-		     dependent-variables)
-      (setf (gethash (photon-variable-name fcn-def)
-		     dependent-variables) fcn-def))
+    (unless (gethash (photon-variable-name fcn-def) dependent-variables)
+      (setf (gethash (photon-variable-name fcn-def) dependent-variables) fcn-def))
     (let* ((fcn-type (photon-variable-type fcn-def))
 	   (args (mapcar (lambda (compiled-arg)
-			   (format nil "~a ~a"
+			   (format nil "~a %~a"
 				   (primitive-type-name (photon-variable-type compiled-arg))
 				   (photon-variable-name
 				    compiled-arg)))
@@ -134,14 +141,17 @@
 	   (string-arg-types (join-strings (mapcar (lambda
 						    (arg)(primitive-type-name
 							  (photon-variable-type
-							   arg))) compiled-args)
+							   arg)))
+						   compiled-args)
 	     #\, )))
-      
-      (add-local (format nil "call ~a (~a)~a(~a)"
-			 (primitive-type-name (function-type-return-type fcn-type))
-			 string-arg-types (photon-variable-name fcn-def)
-			 string-args) (function-type-return-type fcn-type))
-      )))
+      (let ((ret (primitive-type-name (function-type-return-type fcn-type)))
+	    (fcn-name (photon-variable-name fcn-def)))
+	(add-local (format nil "call ~a (~a)@~a(~a)"
+			   ret
+			   string-arg-types fcn-name
+			   string-args)
+	(function-type-return-type fcn-type))
+      ))))
 
 (defun is-function(variable)
   (function-type-p (photon-variable-type variable)))
@@ -166,7 +176,7 @@
 	      (let ((used-type (if expected-type
 				   expected-type
 				 (photon-variable-type (first compiled-args)))))
-		(funcall add-local (apply #'format nil "~a ~a ~a, ~a" opcode (primitive-type-name used-type) arg-names) used-type))))))
+		(funcall add-local (apply #'format nil "~a ~a %~a, %~a" opcode (primitive-type-name used-type) arg-names) used-type))))))
     #'operator-compile))
     
 (defun compile-ast(ast)
@@ -175,7 +185,9 @@
 	(let ((fcn-def
 	       (if (listp first)
 		   (compile-value ast)
-		 (get-variable first))))
+		   (get-variable first))))
+	  (unless fcn-def
+	    (error (format nil "No variable named '~a'" fcn-def)))
 	  (cond ((is-function fcn-def)
 		 (compile-with-function fcn-def (rest ast) ))
 		((is-builtin-macro fcn-def)
@@ -361,17 +373,26 @@ define void @eval(){
 
 (defvar nameid 0)
 (defun add-local (cmd &optional (type nil))
-  (if type
+  (if (and type (not (eq type void-type)))
       (let ((var (make-photon-variable :name (format nil "%tmp~a" (incf nameid)) :type type)))
 	(setf code (cons (format nil "~a = ~a" (photon-variable-name var) cmd) code))
 	var)
-    (progn (setf code (cons cmd code)) nil)))
+      (progn (setf code (cons cmd code)) nil)))
+
+(defun add-global (cmd &optional (type nil))
+  (if (and type (not (eq type void-type)))
+      (let ((var (make-photon-variable :name (format nil "%tmp~a" (incf nameid)) :type type)))
+	(setf code (cons (format nil "~a = ~a" (photon-variable-name var) cmd) code))
+	var)
+      (progn (setf code (cons cmd code)) nil)))
+
 (defun add-variable(variable)
   (setf (gethash (photon-variable-name variable) (first scope) )
 	variable))
 (let ((scope (list (make-hash-table)))
       (add-local #'add-local)
-      (dependent-variables (make-hash-table)))
+      (dependent-variables (make-hash-table))
+      (code nil))
   (add-variable (make-photon-variable :name '+ :type :builtin-macro :data
 				      (make-operator-macro '+ "add")))
   (add-variable (make-photon-variable :name 'the :type :builtin-macro :data
@@ -379,11 +400,15 @@ define void @eval(){
   (add-variable (make-photon-variable :name 'defun :type :builtin-macro :data
 				      #'defun-macro))
   (add-variable (make-photon-variable
-		 :name 'testrun
+		 :name '|testrun|
 		 :type (make-function-type :return-type void-type :arg-types nil)
 		 :data run-test))
-
-  (compile-ast `(defun |testhello1| ((x ,i32-type)) (the ,i32-type (+ x 3))))
+  
+  (compile-ast `(defun |testhello1| ((x ,i32-type)) (testrun)))
+  (format t "Dependent Variables:~%~a~%" dependent-variables)
   (let ((compile-out (concat-lines (reverse code))))
+    
     (format t "Compile Out:~%~a~%" compile-out)
+
+    
     (compile-il compile-out)))
