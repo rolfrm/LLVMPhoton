@@ -11,16 +11,15 @@
 (define-foreign-library libdl (t "/usr/lib/x86_64-linux-gnu/libdl.so"))
 (use-foreign-library libdl)
 
-
 (defcfun "dlopen" :int64 (path :string) (flag :int))
 (defcfun "dlsym" :int64 (lib :int64) (symbol :string))
 (defcfun "dlclose" :int64 (lib :int64))
 (defvar randid 0)
 
-(defun compile-il (il-code)
+(defun compile-il (il-code &optional (so-file nil))
   (let ((id (incf randid)))
     (let ((temp-il-file (format nil "./tmp~a.il" id))
-	  (temp-so-file (format nil "./tmp~a.so" id))
+	  (temp-so-file (or so-file (format nil "./tmp~a.so" id)))
 	  (temp-asm-file (format nil "./tmp~a.il.s" id)))
       (with-open-file (stream temp-il-file :direction :output :if-exists :supersede)
 	 (format stream "~a" il-code))
@@ -47,8 +46,10 @@
     (write-string (car strings) s)))
 
 (defun join-strings(strings seperator)
-  (with-output-to-string (s)
-			 (join-strings-stream s strings seperator)))			 
+  (if strings
+      (with-output-to-string (s)
+	(join-strings-stream s strings seperator))
+      ""))
 
 (defstruct photon-variable (name) (type) (data))
 (defstruct primitive-type (name) (size))
@@ -70,13 +71,14 @@
 (defvar scope nil)
 
 (defun get-variable (name)
-  (labels ((+get-variable (scope)
-	      (if scope
-		  (let ((found (gethash name (car scope))))
-		    (if found
-			found
-		      (+get-variable (cdr scope))))
-		nil)))
+  (labels
+      ((+get-variable (scope)
+	 (if scope
+	     (let ((found (gethash name (car scope))))
+	       (if found
+		   found
+		   (+get-variable (cdr scope))))
+	     nil)))
     (+get-variable scope)))
 
 (defun type-is-float (type)
@@ -104,8 +106,10 @@
 			i64-type))
 	   (type-name (primitive-type-name used-type)))
       (let ((var (add-local (format nil "alloca ~a" type-name) expected-type)))
-	(add-local (format nil "store ~a ~a, ~a* ~a" type-name value type-name (photon-variable-name var)) nil)
-	(let ((var2 (add-local (format nil "load ~a, ~a* ~a" type-name type-name (photon-variable-name var)) used-type)))
+	(add-local (format nil "store ~a ~a, ~a* ~a"
+			   type-name value type-name (photon-variable-name var)) nil)
+	(let* ((load-val (format nil "load ~a, ~a* ~a" type-name type-name (photon-variable-name var)))
+	       (var2 (add-local load-val used-type)))
 	  var2))))
    ((stringp value) (funcall add-local (format nil "~a" value)))
    ((symbolp value) (get-variable value))
@@ -127,16 +131,16 @@
 				    compiled-arg)))
 			 compiled-args))
 	   (string-args (join-strings args #\,))
-	   (string-arg-types (join-string (mapcar (lambda
+	   (string-arg-types (join-strings (mapcar (lambda
 						    (arg)(primitive-type-name
 							  (photon-variable-type
-							   arg))) compiled-args))))
+							   arg))) compiled-args)
+	     #\, )))
       
       (add-local (format nil "call ~a (~a)~a(~a)"
 			 (primitive-type-name (function-type-return-type fcn-type))
 			 string-arg-types (photon-variable-name fcn-def)
 			 string-args) (function-type-return-type fcn-type))
-		       
       )))
 
 (defun is-function(variable)
@@ -164,11 +168,6 @@
 				 (photon-variable-type (first compiled-args)))))
 		(funcall add-local (apply #'format nil "~a ~a ~a, ~a" opcode (primitive-type-name used-type) arg-names) used-type))))))
     #'operator-compile))
-
-;(defun add-builtin-operator
-
-;(defun compile-with-builtin-macro(fcn-def args add-global add-local scope)
-;  (case (variable-name fcn-def)
     
 (defun compile-ast(ast)
   (if (listp ast)
@@ -239,8 +238,6 @@
 	(funcall add-local (format nil "}"))
 	))))
   
-    
-
 (defvar run-fcn
   "
 define void @run_fcn(void ()* %f){
@@ -265,7 +262,7 @@ define void @set_ptr(i8** %dst, i8* %src){
 
 ")
 
-(defvar run-fcn-dll (compile-il run-fcn))
+(defvar run-fcn-dll (compile-il run-fcn ))
 (format t "fcn dll:~a~%" run-fcn-dll)
 (dlclose run-fcn-dll)
 (define-foreign-library librun (t "./tmp1.so"))
@@ -274,12 +271,6 @@ define void @set_ptr(i8** %dst, i8* %src){
 (defcfun ("run_fcn2" runfcn2) :void (fcn :int64) (arg :int64))
 (defcfun ("deref" deref) :int64 (arg :int64))
 (defcfun ("set_ptr" set-ptr) :void (dst :int64) (src :int64))
-;(describe run_fcn)
-					;(describe librun)
-
-(defvar glfw (dlopen "libglfw.so" 1))
-(defvar glfwInitfcn (dlsym glfw "glfwInit"))
-(runfcn glfwInitfcn)
 
 (defvar test1-fcn
   "
@@ -298,7 +289,8 @@ define void @run_test2(i8* %str){
 }")
 
 (defvar test1 (compile-il test1-fcn))
-(runfcn (dlsym test1 "run_test"))
+(defvar run-test (dlsym test1 "run_test"))
+(runfcn run-test)
 (runfcn2 (dlsym test1 "run_test2") (deref (dlsym test1 "helloworld")))
 (format t "NNN ~a~%" (dlsym test1 "helloworld"))
 ;; The following test code
@@ -386,6 +378,10 @@ define void @eval(){
 				      #'the-macro))
   (add-variable (make-photon-variable :name 'defun :type :builtin-macro :data
 				      #'defun-macro))
+  (add-variable (make-photon-variable
+		 :name 'testrun
+		 :type (make-function-type :return-type void-type :arg-types nil)
+		 :data run-test))
 
   (compile-ast `(defun |testhello1| ((x ,i32-type)) (the ,i32-type (+ x 3))))
   (let ((compile-out (concat-lines (reverse code))))
