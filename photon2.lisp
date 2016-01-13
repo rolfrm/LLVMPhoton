@@ -28,7 +28,7 @@
       (sb-ext:run-program "gcc" (list temp-asm-file "-o" temp-so-file "-fPIC" "-shared" )
 			  :search :wait :output t)
       (format t "~a~%" temp-so-file)
-      (dlopen temp-so-file 1);257);1)
+      (dlopen temp-so-file 257);1)
       )))
 
 (defun concat-lines (list-of-strings)
@@ -126,10 +126,8 @@
 
 
 (defun compile-with-function(fcn-def args)
-  (let ((compiled-args
-	 (mapcar (lambda (sub) (compile-ast sub)) args)))
-    (unless (gethash (photon-variable-name fcn-def) dependent-variables)
-      (setf (gethash (photon-variable-name fcn-def) dependent-variables) fcn-def))
+  (let ((compiled-args (mapcar (lambda (sub) (compile-ast sub)) args)))
+    
     (let* ((fcn-type (photon-variable-type fcn-def))
 	   (args (mapcar (lambda (compiled-arg)
 			   (format nil "~a %~a"
@@ -146,6 +144,10 @@
 	     #\, )))
       (let ((ret (primitive-type-name (function-type-return-type fcn-type)))
 	    (fcn-name (photon-variable-name fcn-def)))
+	(unless (gethash (photon-variable-name fcn-def) dependent-variables)
+	  (setf (gethash (photon-variable-name fcn-def) dependent-variables) fcn-def)
+	  (funcall add-global (format nil "declare ~a @~a(~a)" ret fcn-name string-arg-types))
+	  )
 	(add-local (format nil "call ~a (~a)@~a(~a)"
 			   ret
 			   string-arg-types fcn-name
@@ -221,6 +223,7 @@
 	      (setf (gethash name fcn-scope) variable)
 	      (setf arg-vars (cons variable arg-vars))
 	      )))
+      (setf arg-vars (reverse arg-vars))
       (let* ((scope (cons fcn-scope scope))
 	     (last-var nil)
 	     (body-code
@@ -378,13 +381,13 @@ define void @eval(){
 	(setf code (cons (format nil "~a = ~a" (photon-variable-name var) cmd) code))
 	var)
       (progn (setf code (cons cmd code)) nil)))
-
+(defvar global-code nil)
 (defun add-global (cmd &optional (type nil))
   (if (and type (not (eq type void-type)))
       (let ((var (make-photon-variable :name (format nil "%tmp~a" (incf nameid)) :type type)))
-	(setf code (cons (format nil "~a = ~a" (photon-variable-name var) cmd) code))
+	(setf global-code (cons (format nil "~a = ~a" (photon-variable-name var) cmd) global-code))
 	var)
-      (progn (setf code (cons cmd code)) nil)))
+      (progn (setf global-code (cons cmd global-code)) nil)))
 
 (defun add-variable(variable)
   (setf (gethash (photon-variable-name variable) (first scope) )
@@ -392,6 +395,8 @@ define void @eval(){
 (let ((scope (list (make-hash-table)))
       (add-local #'add-local)
       (dependent-variables (make-hash-table))
+      (add-global #'add-global)
+      (global-code nil)
       (code nil))
   (add-variable (make-photon-variable :name '+ :type :builtin-macro :data
 				      (make-operator-macro '+ "add")))
@@ -404,9 +409,9 @@ define void @eval(){
 		 :type (make-function-type :return-type void-type :arg-types nil)
 		 :data run-test))
   
-  (compile-ast `(defun |testhello1| ((x ,i32-type)) (testrun)))
+  (compile-ast `(defun |testhello1| ((x ,i32-type)) (|testrun|)))
   (format t "Dependent Variables:~%~a~%" dependent-variables)
-  (let ((compile-out (concat-lines (reverse code))))
+  (let ((compile-out (concat-lines (reverse (concatenate 'list code global-code)))))
     
     (format t "Compile Out:~%~a~%" compile-out)
 
