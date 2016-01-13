@@ -1,6 +1,4 @@
 (proclaim '(optimize (debug 3) (speed 0)))
-(print "Hej")
-
 (quicklisp:quickload 'cffi)
 
 (defpackage :cffi-user
@@ -289,8 +287,7 @@ define void @set_ptr(i8** %dst, i8* %src){
 
 (defvar test1-fcn
   "
-@.str = private constant [13 x i8] c\"hello world\\0A\\00\"
-@helloworld = global [13 x i8]* @.str
+@.str = private constant [13 x i8] c\"hello worlE\\0A\\00\"
 declare i32 @printf(i8* noalias nocapture, ...)
 define void @run_test(){
  %cast210 = getelementptr [13 x i8], [13 x i8]* @.str, i64 0, i64 0
@@ -306,8 +303,8 @@ define void @run_test2(i8* %str){
 (defvar test1 (compile-il test1-fcn))
 (defvar run-test (dlsym test1 "run_test"))
 (runfcn run-test)
-(runfcn2 (dlsym test1 "run_test2") (deref (dlsym test1 "helloworld")))
-(format t "NNN ~a~%" (dlsym test1 "helloworld"))
+;(runfcn2 (dlsym test1 "run_test2") (deref (dlsym test1 "helloworld")))
+;(format t "NNN ~a~%" (dlsym test1 "helloworld"))
 ;; The following test code
 
 (defvar testcode
@@ -353,6 +350,8 @@ define void @eval(){
  ret void
 }
 ")
+
+
 
 (defvar r1dl (compile-il r1))
 (defvar eval2 (dlsym r1dl "eval"))
@@ -416,4 +415,51 @@ define void @eval(){
     (format t "Compile Out:~%~a~%" compile-out)
 
     
-    (compile-il compile-out)))
+    (compile-il compile-out)
+    ))
+
+
+
+(defparameter test2-fcn
+  "
+@.str = private constant [13 x i8] c\"hello worl_\\0A\\00\"
+declare i32 @printf(i8* noalias nocapture, ...)
+define void @run_test3(){
+ %cast210 = getelementptr [13 x i8], [13 x i8]* @.str, i64 0, i64 0
+ call i32 (i8*,...) @printf(i8* %cast210)
+ ret void
+}
+")
+(defparameter test2-lib (compile-il test2-fcn))
+(defvar r3 "
+declare void @run_test3()
+define void @eval(){
+ call void () @run_test3()
+ ret void
+}
+")
+
+(defparameter r3-lib (compile-il r3))
+
+(let ((evalfcn (dlsym r3-lib "eval"))) (runfcn evalfcn))
+(format t "R3lib: ~a~%" r3-lib)
+(print (dlclose r3-lib))
+(print (dlclose test2-lib))
+
+
+(defparameter test2-fcn
+  "
+@.str = private constant [13 x i8] c\"hello worlD\\0A\\00\"
+declare i32 @printf(i8* noalias nocapture, ...)
+define void @run_test3(){
+ %cast210 = getelementptr [13 x i8], [13 x i8]* @.str, i64 0, i64 0
+ call i32 (i8*,...) @printf(i8* %cast210)
+ ret void
+}
+")
+(print test2-fcn)
+(defparameter test2-lib (compile-il test2-fcn))
+(defparameter r3-lib (compile-il r3))
+
+(let ((evalfcn (dlsym r3-lib "eval"))) (runfcn evalfcn))
+(format t "R3lib: ~a~%" r3-lib)
