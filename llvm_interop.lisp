@@ -3,7 +3,7 @@
 
 (defpackage :llvm
   (:use :common-lisp :cffi)
-  (:export compile-il))
+  (:export compile-il il-lib-get-sym il-lib-close il-lib-open il-lib-filename))
    
 (in-package :llvm)
 

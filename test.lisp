@@ -1,5 +1,5 @@
 (defpackage :photon-test
-  (:use :common-lisp :photon-compiler :llvm :photon-builtin :photon-types :utils))
+  (:use :common-lisp :photon-compiler :llvm :photon-builtin :photon-types :utils :cffi))
 (in-package :photon-test)
 
 (defvar run-fcn
@@ -28,8 +28,8 @@ define void @set_ptr(i8** %dst, i8* %src){
 
 (defvar run-fcn-dll (compile-il run-fcn ))
 (format t "fcn dll:~a~%" run-fcn-dll)
-(dlclose run-fcn-dll)
-(define-foreign-library librun (t "./tmp1.so"))
+(il-lib-close run-fcn-dll)
+(define-foreign-library librun (il-lib-filename run-fcn-dll))
 (use-foreign-library librun)
 (defcfun ("run_fcn" runfcn) :void (fcn :int64))
 (defcfun ("run_fcn2" runfcn2) :void (fcn :int64) (arg :int64))
