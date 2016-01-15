@@ -17,7 +17,8 @@
 (defstruct il-lib (filename) (handle))
 
 (defun il-lib-get-sym (lib sym)
-  (dlsym (il-lib-handle lib) sym))
+  (let ((sym (dlsym (il-lib-handle lib) sym)))
+    (if (eq sym 0) nil sym)))
 (defun il-lib-close(lib)
   (dlclose (il-lib-handle lib)))
 (defun il-lib-open(filepath)

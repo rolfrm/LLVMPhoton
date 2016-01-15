@@ -1,3 +1,4 @@
+(proclaim '(optimize (debug 3) (speed 0)))
 (defpackage :photon-test
   (:use :common-lisp :photon-compiler :llvm :photon-builtin :photon-types :utils :cffi))
 (in-package :photon-test)
@@ -52,7 +53,8 @@ define void @run_test2(i8* %str){
 }")
 
 (defvar test1 (compile-il test1-fcn))
-(defvar run-test (dlsym test1 "run_test"))
+(defvar run-test (il-lib-get-sym test1 "run_test"))
+(format t "TEST ~a~% run-test" run-test)
 (runfcn run-test)
 ;(runfcn2 (dlsym test1 "run_test2") (deref (dlsym test1 "helloworld")))
 ;(format t "NNN ~a~%" (dlsym test1 "helloworld"))
@@ -105,17 +107,17 @@ define void @eval(){
 
 
 (defvar r1dl (compile-il r1))
-(defvar eval2 (dlsym r1dl "eval"))
-(defvar xdl (dlsym r1dl "x"))
-(defvar ydl (dlsym r1dl "y"))
+(defvar eval2 (il-lib-get-sym r1dl "eval"))
+(defvar xdl (il-lib-get-sym r1dl "x"))
+(defvar ydl (il-lib-get-sym r1dl "y"))
 
 (runfcn eval2)
 
 (print (deref xdl))
 (format t "~%~%")
 (defvar r2dl (compile-il (format nil r2 xdl)))
-(defvar eval3 (dlsym r2dl "eval"))
-(set-ptr (dlsym r2dl ".run_test") (dlsym test1 "run_test"))
+(defvar eval3 (il-lib-get-sym r2dl "eval"))
+(set-ptr (il-lib-get-sym r2dl ".run_test") (il-lib-get-sym test1 "run_test"))
 (runfcn eval3)
 (runfcn eval3)
 (runfcn eval3)
@@ -149,7 +151,7 @@ define void @eval(){
       (global-code nil)
       (code nil))
   (add-variable (make-photon-variable :name '+ :type :builtin-macro :data
-				      (make-operator-macro '+ "add")))
+				      (make-operator-macroe "add")))
   (add-variable (make-photon-variable :name 'the :type :builtin-macro :data
 				      #'the-macro))
   (add-variable (make-photon-variable :name 'defun :type :builtin-macro :data
